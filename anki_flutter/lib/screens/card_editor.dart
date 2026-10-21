@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../display.dart';
 import '../main.dart';
 import '../models.dart';
 import '../services/speech.dart';
@@ -15,10 +16,7 @@ import 'deck_screen.dart' show kLanguages;
 
 /// "New Card" sheet (or edit, when [card] is given).
 Future<void> showCardEditor(BuildContext context, {required String deckId, Flashcard? card}) {
-  return Navigator.of(context).push(MaterialPageRoute(
-    fullscreenDialog: true,
-    builder: (_) => CardEditor(deckId: deckId, card: card),
-  ));
+  return Navigator.of(context).push(pageRoute(CardEditor(deckId: deckId, card: card), fullscreenDialog: true));
 }
 
 class CardEditor extends StatefulWidget {

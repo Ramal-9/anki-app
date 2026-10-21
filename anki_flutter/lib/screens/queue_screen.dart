@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../display.dart';
 import '../main.dart';
 import '../models.dart';
 import '../store.dart';
@@ -64,28 +65,33 @@ class QueueScreen extends StatelessWidget {
           ),
           const SliverToBoxAdapter(child: SectionLabel('Study by deck')),
           SliverToBoxAdapter(
-            child: SizedBox(
-              height: 108,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: store.decks.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, i) {
-                  final d = store.decks[i];
-                  final screen = MediaQuery.of(context).size.width.clamp(0.0, 520.0);
-                  return SizedBox(
-                    width: (screen - 52) / 2,
-                    child: DeckTile(
-                      name: d.name,
-                      cards: store.cardsOf(d.id).length,
-                      due: store.queue(deckId: d.id).length,
-                      onTap: () => Navigator.of(context)
-                          .push(MaterialPageRoute(builder: (_) => DeckScreen(deckId: d.id))),
-                    ),
-                  );
-                },
-              ),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                // Two tiles across on a phone, more on wider windows.
+                final n = columnsFor(c.maxWidth, minTile: 240);
+                final tileWidth = (c.maxWidth - 40 - 12 * (n - 1)) / n;
+                return SizedBox(
+                  height: 108,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: store.decks.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, i) {
+                      final d = store.decks[i];
+                      return SizedBox(
+                        width: tileWidth,
+                        child: DeckTile(
+                          name: d.name,
+                          cards: store.cardsOf(d.id).length,
+                          due: store.queue(deckId: d.id).length,
+                          onTap: () => Navigator.of(context).push(pageRoute(DeckScreen(deckId: d.id))),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
             ),
           ),
           SliverToBoxAdapter(
@@ -97,22 +103,24 @@ class QueueScreen extends StatelessWidget {
           ),
           SliverToBoxAdapter(
             child: queue.isEmpty
-                ? Panel(children: [
-                    Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Text('All caught up! 🎉\nAdd new cards in the Library.',
+                ? Panel(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Text(
+                          'All caught up! 🎉\nAdd new cards in the Library.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.4)),
-                    )
-                  ])
-                : Panel(children: [
-                    for (var i = 0; i < queue.length && i < 50; i++)
-                      _QueueRow(
-                        index: i + 1,
-                        card: queue[i],
-                        deckName: store.deckById(queue[i].deckId)?.name ?? '',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.4),
+                        ),
                       ),
-                  ]),
+                    ],
+                  )
+                : Panel(
+                    children: [
+                      for (var i = 0; i < queue.length && i < 50; i++)
+                        _QueueRow(index: i + 1, card: queue[i], deckName: store.deckById(queue[i].deckId)?.name ?? ''),
+                    ],
+                  ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 120)),
         ],
@@ -155,10 +163,7 @@ Future<int?> showDailyGoalPicker(BuildContext context, int current) {
 }
 
 void openStudy(BuildContext context, {String? deckId}) {
-  Navigator.of(context).push(MaterialPageRoute(
-    fullscreenDialog: true,
-    builder: (_) => StudyScreen(deckId: deckId),
-  ));
+  Navigator.of(context).push(pageRoute(StudyScreen(deckId: deckId), fullscreenDialog: true));
 }
 
 class _QueueHero extends StatelessWidget {
@@ -184,10 +189,7 @@ class _QueueHero extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
       padding: const EdgeInsets.fromLTRB(26, 26, 26, 26),
-      decoration: BoxDecoration(
-        gradient: AppColors.queueGradient,
-        borderRadius: BorderRadius.circular(36),
-      ),
+      decoration: BoxDecoration(gradient: AppColors.queueGradient, borderRadius: BorderRadius.circular(36)),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -207,44 +209,69 @@ class _QueueHero extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text.rich(TextSpan(children: [
-                const TextSpan(text: 'IN YOUR QUEUE', style: TextStyle(letterSpacing: 2.4)),
-                const TextSpan(text: '  ·  '),
-                TextSpan(text: date, style: const TextStyle(letterSpacing: 0.4)),
-              ]), style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600)),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'IN YOUR QUEUE', style: TextStyle(letterSpacing: 2.4)),
+                    const TextSpan(text: '  ·  '),
+                    TextSpan(text: date, style: const TextStyle(letterSpacing: 0.4)),
+                  ],
+                ),
+                style: TextStyle(color: dim, fontSize: 15, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 18),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text('$ready',
-                      style: const TextStyle(
-                          color: white, fontSize: 76, fontWeight: FontWeight.w800, height: 1, letterSpacing: -2)),
+                  Text(
+                    '$ready',
+                    style: const TextStyle(
+                      color: white,
+                      fontSize: 76,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                      letterSpacing: -2,
+                    ),
+                  ),
                   const SizedBox(width: 14),
-                  const Text('cards ready', style: TextStyle(color: white, fontSize: 22, fontWeight: FontWeight.w500)),
+                  const Text(
+                    'cards ready',
+                    style: TextStyle(color: white, fontSize: 22, fontWeight: FontWeight.w500),
+                  ),
                 ],
               ),
               const SizedBox(height: 22),
-              Text('~$minutes min  ·  $newCount new  ·  $reviewCount review',
-                  style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w500)),
+              Text(
+                '~$minutes min  ·  $newCount new  ·  $reviewCount review',
+                style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w500),
+              ),
               const SizedBox(height: 16),
-              Row(children: [
-                Text('Progress', style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w500)),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: goal == 0 ? 0 : (done / goal).clamp(0, 1),
-                      minHeight: 9,
-                      color: Colors.white,
-                      backgroundColor: Colors.white.withValues(alpha: 0.3),
+              Row(
+                children: [
+                  Text(
+                    'Progress',
+                    style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: goal == 0 ? 0 : (done / goal).clamp(0, 1),
+                        minHeight: 9,
+                        color: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.3),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Text('$done / $goal', style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w600)),
-              ]),
+                  const SizedBox(width: 14),
+                  Text(
+                    '$done / $goal',
+                    style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
               const SizedBox(height: 22),
               GestureDetector(
                 onTap: ready == 0 ? null : onStudy,
@@ -252,12 +279,17 @@ class _QueueHero extends StatelessWidget {
                   height: 60,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.school_rounded, color: Colors.black, size: 28),
-                    const SizedBox(width: 12),
-                    Text(ready == 0 ? 'Nothing due' : 'Study cards',
-                        style: const TextStyle(color: Colors.black, fontSize: 21, fontWeight: FontWeight.w600)),
-                  ]),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.school_rounded, color: Colors.black, size: 28),
+                      const SizedBox(width: 12),
+                      Text(
+                        ready == 0 ? 'Nothing due' : 'Study cards',
+                        style: const TextStyle(color: Colors.black, fontSize: 21, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -272,11 +304,7 @@ class _SortButton extends StatelessWidget {
   const _SortButton({required this.store});
   final AppStore store;
 
-  static const _labels = {
-    QueueSort.dueDate: 'Due Date',
-    QueueSort.deck: 'Deck',
-    QueueSort.created: 'Recently Added',
-  };
+  static const _labels = {QueueSort.dueDate: 'Due Date', QueueSort.deck: 'Deck', QueueSort.created: 'Recently Added'};
 
   @override
   Widget build(BuildContext context) {
@@ -291,21 +319,28 @@ class _SortButton extends StatelessWidget {
         for (final e in _labels.entries)
           PopupMenuItem(
             value: e.key,
-            child: Row(children: [
-              Expanded(child: Text(e.value)),
-              if (e.key == store.queueSort) const Icon(Icons.check, size: 18),
-            ]),
+            child: Row(
+              children: [
+                Expanded(child: Text(e.value)),
+                if (e.key == store.queueSort) const Icon(Icons.check, size: 18),
+              ],
+            ),
           ),
       ],
       child: Padding(
         padding: const EdgeInsets.all(8),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.calendar_month_rounded, color: AppColors.accentStrong, size: 26),
-          const SizedBox(width: 6),
-          Text(_labels[store.queueSort]!,
-              style: const TextStyle(color: AppColors.accentStrong, fontSize: 21, fontWeight: FontWeight.w500)),
-          const Icon(Icons.unfold_more_rounded, color: AppColors.accentStrong),
-        ]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.calendar_month_rounded, color: AppColors.accentStrong, size: 26),
+            const SizedBox(width: 6),
+            Text(
+              _labels[store.queueSort]!,
+              style: const TextStyle(color: AppColors.accentStrong, fontSize: 21, fontWeight: FontWeight.w500),
+            ),
+            const Icon(Icons.unfold_more_rounded, color: AppColors.accentStrong),
+          ],
+        ),
       ),
     );
   }
@@ -335,24 +370,30 @@ class _QueueRow extends StatelessWidget {
                 color: AppColors.accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text('$index',
-                  style: const TextStyle(color: AppColors.accent, fontSize: 17, fontWeight: FontWeight.w600)),
+              child: Text(
+                '$index',
+                style: const TextStyle(color: AppColors.accent, fontSize: 17, fontWeight: FontWeight.w600),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(card.front,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: AppColors.text, fontSize: 19, fontWeight: FontWeight.w600)),
+                  Text(
+                    card.front,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppColors.text, fontSize: 19, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 6),
-                  Row(children: [
-                    Icon(Icons.inventory_2_outlined, size: 18, color: AppColors.textSecondary),
-                    const SizedBox(width: 8),
-                    Text(deckName, style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
-                  ]),
+                  Row(
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 18, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      Text(deckName, style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+                    ],
+                  ),
                 ],
               ),
             ),

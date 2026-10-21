@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../display.dart';
 import '../main.dart';
 import '../models.dart';
 import '../srs.dart';
@@ -178,7 +179,7 @@ class DeckScreen extends StatelessWidget {
         if (store.cardsOf(deck.id).length < 4) {
           toast(context, 'A quiz needs at least 4 cards');
         } else {
-          Navigator.of(context).push(MaterialPageRoute(builder: (_) => QuizScreen(deckId: deck.id)));
+          Navigator.of(context).push(pageRoute(QuizScreen(deckId: deck.id)));
         }
       case 'settings':
         _settings(context, store, deck);

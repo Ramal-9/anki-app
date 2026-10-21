@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../display.dart';
 import '../main.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'queue_screen.dart';
+import 'screen_settings.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -156,6 +158,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   store.darkMode = v;
                   store.touch();
                 },
+              ),
+              _Row(
+                icon: Icons.devices_rounded,
+                title: 'Screen & layout',
+                value: switch (store.layoutMode) {
+                  LayoutMode.auto => 'Auto',
+                  LayoutMode.phone => 'Phone',
+                  LayoutMode.desktop => 'Desktop',
+                },
+                chevron: true,
+                onTap: () => Navigator.of(context).push(pageRoute(const ScreenSettingsScreen())),
               ),
               _Row(
                 icon: Icons.app_shortcut_outlined,

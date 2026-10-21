@@ -24,13 +24,27 @@ class InsightsScreen extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(20, 76, 20, 16),
             child: Text('Insights', style: TextStyle(fontSize: 44, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
           ),
-          _RetentionCard(store: store),
-          const SizedBox(height: 22),
-          _ActivityCard(store: store),
-          const SizedBox(height: 22),
-          _ForecastCard(store: store),
-          const SizedBox(height: 22),
-          _TotalsCard(store: store),
+          LayoutBuilder(builder: (context, c) {
+            final cards = <Widget>[
+              _RetentionCard(store: store),
+              _ActivityCard(store: store),
+              _ForecastCard(store: store),
+              _TotalsCard(store: store),
+            ];
+            // Two columns on wide windows (Mac), one on phones.
+            if (c.maxWidth < 860) {
+              return Column(children: [
+                for (final card in cards) Padding(padding: const EdgeInsets.only(bottom: 22), child: card),
+              ]);
+            }
+            final half = (c.maxWidth - 20) / 2;
+            return Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: Wrap(runSpacing: 22, children: [
+                for (final card in cards) SizedBox(width: half, child: card),
+              ]),
+            );
+          }),
         ],
       ),
     );

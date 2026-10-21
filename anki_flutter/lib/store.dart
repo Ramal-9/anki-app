@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'display.dart';
 import 'models.dart';
 import 'srs.dart';
 import 'theme.dart';
@@ -31,6 +32,14 @@ class AppStore extends ChangeNotifier {
   double retentionGoal = 0.9;
   QueueSort queueSort = QueueSort.dueDate;
   String? email;
+
+  // Screen
+  LayoutMode layoutMode = LayoutMode.auto;
+  double uiScale = 1.0;
+  double textScale = 1.0;
+
+  /// Max width of the phone layout when the window is wider (e.g. phone mode on a Mac).
+  double phoneWidth = 520;
 
   Scheduler get scheduler => Scheduler(maxIntervalDays: maxIntervalDays);
 
@@ -81,6 +90,10 @@ class AppStore extends ChangeNotifier {
           'retentionGoal': retentionGoal,
           'queueSort': queueSort.index,
           'email': email,
+          'layoutMode': layoutMode.index,
+          'uiScale': uiScale,
+          'textScale': textScale,
+          'phoneWidth': phoneWidth,
         },
       };
 
@@ -106,6 +119,10 @@ class AppStore extends ChangeNotifier {
     retentionGoal = (s['retentionGoal'] ?? 0.9).toDouble();
     queueSort = QueueSort.values[s['queueSort'] ?? 0];
     email = s['email'];
+    layoutMode = LayoutMode.values[s['layoutMode'] ?? 0];
+    uiScale = (s['uiScale'] ?? 1.0).toDouble();
+    textScale = (s['textScale'] ?? 1.0).toDouble();
+    phoneWidth = (s['phoneWidth'] ?? 520).toDouble();
   }
 
   String exportJson() => const JsonEncoder.withIndent('  ').convert(toJson());
