@@ -128,11 +128,7 @@ class _SyncScreenState extends State<SyncScreen> {
       ]),
       const SectionLabel('Add another device', padding: EdgeInsets.fromLTRB(40, 26, 20, 10)),
       Panel(children: [
-        _row(Icons.qr_code_2_rounded, 'Copy setup code', chevron: true, onTap: () async {
-          final code = await s.exportSetupCode();
-          await Clipboard.setData(ClipboardData(text: code));
-          if (mounted) toast(context, 'Setup code copied. Paste it on the other device with the same password.');
-        }),
+        _row(Icons.qr_code_2_rounded, 'Copy setup code', chevron: true, onTap: _showSetupCode),
       ]),
       _note('On the iPhone open the app → Profile → Sync → "I have a setup code", paste the code (send it to '
           'yourself via AirDrop, Notes or Messages) and type the same sync password. The code is encrypted with '
@@ -152,6 +148,54 @@ class _SyncScreenState extends State<SyncScreen> {
         ),
       ),
     ];
+  }
+
+  /// Shows the code in a dialog. Copying happens on the dialog's own button:
+  /// Safari only allows clipboard writes directly inside a tap, not after the
+  /// code has been encrypted asynchronously.
+  Future<void> _showSetupCode() async {
+    final String code;
+    try {
+      code = await _sync.exportSetupCode();
+    } catch (e) {
+      if (mounted) toast(context, 'Could not create the code: $e');
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Setup code'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Paste it on the other device: Profile → Sync → "I have a setup code", with the same sync password.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+          const SizedBox(height: 12),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 160),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.surface2, borderRadius: BorderRadius.circular(12)),
+            child: SingleChildScrollView(
+              child: SelectableText(code, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: code)).then((_) {
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) toast(context, 'Setup code copied');
+              }, onError: (_) {
+                if (mounted) toast(context, 'Copy blocked by the browser: select the code and copy it by hand');
+              });
+            },
+            icon: const Icon(Icons.copy_rounded),
+            label: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------- setup
