@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'card_editor.dart';
 import 'deck_screen.dart';
+import 'settings_pages.dart';
 import 'study_screen.dart';
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -59,7 +60,7 @@ class QueueScreen extends StatelessWidget {
               newCount: newCount,
               reviewCount: reviewCount,
               done: done,
-              goal: store.dailyGoal,
+              goal: store.goalTracking ? store.dailyGoal : 0,
               onStudy: () => openStudy(context),
             ),
           ),
@@ -128,38 +129,7 @@ class QueueScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editGoal(BuildContext context, AppStore store) async {
-    final v = await showDailyGoalPicker(context, store.dailyGoal);
-    if (v != null) {
-      store.dailyGoal = v;
-      store.touch();
-    }
-  }
-}
-
-Future<int?> showDailyGoalPicker(BuildContext context, int current) {
-  return showModalBottomSheet<int>(
-    context: context,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text('Daily goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-          ),
-          for (final g in const [10, 20, 30, 40, 60, 80, 100])
-            ListTile(
-              title: Text('$g cards/day'),
-              trailing: g == current ? const Icon(Icons.check, color: AppColors.accent) : null,
-              onTap: () => Navigator.pop(ctx, g),
-            ),
-          const SizedBox(height: 12),
-        ],
-      ),
-    ),
-  );
+  Future<void> _editGoal(BuildContext context, AppStore store) => showDailyGoalsSheet(context);
 }
 
 void openStudy(BuildContext context, {String? deckId}) {
@@ -246,6 +216,7 @@ class _QueueHero extends StatelessWidget {
                 '~$minutes min  ·  $newCount new  ·  $reviewCount review',
                 style: TextStyle(color: dim, fontSize: 17, fontWeight: FontWeight.w500),
               ),
+              if (goal > 0) ...[
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -272,6 +243,7 @@ class _QueueHero extends StatelessWidget {
                   ),
                 ],
               ),
+              ],
               const SizedBox(height: 22),
               GestureDetector(
                 onTap: ready == 0 ? null : onStudy,

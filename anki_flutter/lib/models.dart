@@ -1,7 +1,8 @@
 enum CardState { newCard, learning, review }
 
 class Deck {
-  Deck({required this.id, required this.name, this.language = 'en-GB', this.newPerDay = 20});
+  Deck({required this.id, required this.name, this.language = 'en-GB', this.newPerDay = 20, DateTime? modified})
+      : modified = modified ?? DateTime.now();
 
   final String id;
   String name;
@@ -10,13 +11,23 @@ class Deck {
   String language;
   int newPerDay;
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'language': language, 'newPerDay': newPerDay};
+  /// Last local change; used to merge decks when syncing devices.
+  DateTime modified;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'language': language,
+        'newPerDay': newPerDay,
+        'modified': modified.toIso8601String(),
+      };
 
   factory Deck.fromJson(Map<String, dynamic> j) => Deck(
         id: j['id'],
         name: j['name'],
         language: j['language'] ?? 'en-GB',
         newPerDay: j['newPerDay'] ?? 20,
+        modified: j['modified'] == null ? DateTime(2000) : DateTime.parse(j['modified']),
       );
 }
 
@@ -35,7 +46,9 @@ class Flashcard {
     this.lapses = 0,
     this.step = 0,
     this.imageUrl,
-  }) : due = due ?? created;
+    DateTime? modified,
+  })  : due = due ?? created,
+        modified = modified ?? created;
 
   final String id;
   String deckId;
@@ -55,6 +68,9 @@ class Flashcard {
   int step;
   String? imageUrl;
 
+  /// Last local change (edit or review); used to merge cards when syncing devices.
+  DateTime modified;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'deckId': deckId,
@@ -69,6 +85,7 @@ class Flashcard {
         'lapses': lapses,
         'step': step,
         if (imageUrl != null) 'imageUrl': imageUrl,
+        'modified': modified.toIso8601String(),
       };
 
   factory Flashcard.fromJson(Map<String, dynamic> j) => Flashcard(
@@ -85,6 +102,7 @@ class Flashcard {
         lapses: j['lapses'] ?? 0,
         step: j['step'] ?? 0,
         imageUrl: j['imageUrl'],
+        modified: j['modified'] == null ? null : DateTime.parse(j['modified']),
       );
 }
 
@@ -108,8 +126,11 @@ class ReviewLog {
   Map<String, dynamic> toJson() =>
       {'c': cardId, 't': time.toIso8601String(), 'g': grade, 'r': wasReview, if (wasNew) 'n': true};
 
-  factory ReviewLog.fromJson(Map<String, dynamic> j) =>
-      ReviewLog(cardId: j['c'], time: DateTime.parse(j['t']), grade: j['g'], wasReview: j['r'] ?? true, wasNew: j['n'] ?? false);
+  factory ReviewLog.fromJson(Map<String, dynamic> j) => ReviewLog(
+      cardId: j['c'], time: DateTime.parse(j['t']), grade: j['g'], wasReview: j['r'] ?? true, wasNew: j['n'] ?? false);
+
+  /// Identity used to de-duplicate logs coming from several devices.
+  String get key => '$cardId|${time.toIso8601String()}';
 }
 
 DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);

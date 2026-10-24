@@ -2,12 +2,51 @@ import 'dart:math';
 
 import 'models.dart';
 
+/// Scheduler presets shown in Profile → Spaced repetition.
+enum SrsPreset { standard, aggressive, relaxed, custom }
+
+class SrsParams {
+  const SrsParams({
+    this.retention = 0.9,
+    this.maxIntervalDays = 365,
+    this.fuzz = true,
+    this.shortTerm = true,
+  });
+
+  /// Desired probability of recalling a card when it comes due (0.7–0.97).
+  final double retention;
+  final int maxIntervalDays;
+
+  /// Spread intervals by ±5 % so cards added together don't stay clumped.
+  final bool fuzz;
+
+  /// Same-day learning steps (1 min → 10 min) for new and forgotten cards.
+  final bool shortTerm;
+
+  static const standard = SrsParams();
+  static const aggressive = SrsParams(retention: 0.95, maxIntervalDays: 180);
+  static const relaxed = SrsParams(retention: 0.85, maxIntervalDays: 730);
+
+  static SrsParams? forPreset(SrsPreset p) => switch (p) {
+        SrsPreset.standard => standard,
+        SrsPreset.aggressive => aggressive,
+        SrsPreset.relaxed => relaxed,
+        SrsPreset.custom => null,
+      };
+}
+
 /// Anki-flavoured SM-2 scheduler.
 ///
 /// New and lapsed cards go through short learning steps (1 min, 10 min);
-/// graduated cards get intervals multiplied by their ease factor.
+/// graduated cards get intervals multiplied by their ease factor. The
+/// retention target scales intervals the way Anki's interval modifier does:
+/// ln(target) / ln(0.9), so 95 % gives shorter and 85 % longer intervals.
 class Scheduler {
-  Scheduler({this.maxIntervalDays = 36500});
+  Scheduler({this.maxIntervalDays = 36500, double retention = 0.9, this.fuzz = false, this.shortTerm = true})
+      : modifier = log(retention) / log(0.9);
+
+  factory Scheduler.fromParams(SrsParams p) =>
+      Scheduler(maxIntervalDays: p.maxIntervalDays, retention: p.retention, fuzz: p.fuzz, shortTerm: p.shortTerm);
 
   static const learningSteps = [Duration(minutes: 1), Duration(minutes: 10)];
   static const graduatingInterval = 1;
@@ -15,6 +54,9 @@ class Scheduler {
   static const minEase = 1.3;
 
   final int maxIntervalDays;
+  final double modifier;
+  final bool fuzz;
+  final bool shortTerm;
 
   /// Applies [grade] (1..4) to [card] in place, relative to [now].
   void answer(Flashcard card, int grade, DateTime now) {
@@ -25,7 +67,8 @@ class Scheduler {
       ..ease = p.ease
       ..step = p.step
       ..due = p.due
-      ..reps = card.reps + 1;
+      ..reps = card.reps + 1
+      ..modified = now;
     if (p.wasLapse) card.lapses++;
   }
 
@@ -37,22 +80,26 @@ class Scheduler {
       switch (grade) {
         case 1:
           ease = max(minEase, ease - 0.2);
+          if (!shortTerm) return _review(card, 1, ease, now, lapse: true);
           return SchedulePreview(CardState.learning, 1, ease, 0, now.add(learningSteps.first), wasLapse: true);
         case 2:
           ease = max(minEase, ease - 0.15);
-          final n = _clamp((ivl * 1.2).round(), ivl + 1);
-          return SchedulePreview(CardState.review, n, ease, 0, _days(now, n));
+          return _review(card, _next(ivl * 1.2, ivl + 1), ease, now);
         case 3:
-          final n = _clamp((ivl * ease).round(), ivl + 1);
-          return SchedulePreview(CardState.review, n, ease, 0, _days(now, n));
+          return _review(card, _next(ivl * ease, ivl + 1), ease, now);
         default:
           ease += 0.15;
-          final n = _clamp((ivl * ease * 1.3).round(), ivl + 2);
-          return SchedulePreview(CardState.review, n, ease, 0, _days(now, n));
+          return _review(card, _next(ivl * ease * 1.3, ivl + 2), ease, now);
       }
     }
 
     // New or learning card.
+    if (!shortTerm) {
+      return switch (grade) {
+        1 || 2 || 3 => _review(card, graduatingInterval, ease, now),
+        _ => _review(card, easyInterval, ease, now),
+      };
+    }
     final step = card.state == CardState.newCard ? 0 : card.step;
     switch (grade) {
       case 1:
@@ -66,17 +113,25 @@ class Scheduler {
         if (step + 1 < learningSteps.length) {
           return SchedulePreview(CardState.learning, card.interval, ease, step + 1, now.add(learningSteps[step + 1]));
         }
-        final n = max(graduatingInterval, card.interval);
-        return SchedulePreview(CardState.review, n, ease, 0, _days(now, n));
+        return _review(card, max(graduatingInterval, card.interval), ease, now);
       default:
-        final n = max(easyInterval, card.interval);
-        return SchedulePreview(CardState.review, n, ease, 0, _days(now, n));
+        return _review(card, max(easyInterval, card.interval), ease, now);
     }
   }
 
-  int _clamp(int value, int atLeast) => min(maxIntervalDays, max(value, atLeast));
+  /// Interval after the retention modifier, never below [atLeast].
+  int _next(double raw, int atLeast) => max((raw * modifier).round(), atLeast);
 
-  DateTime _days(DateTime now, int days) => dayOnly(now).add(Duration(days: days, hours: 4));
+  SchedulePreview _review(Flashcard card, int days, double ease, DateTime now, {bool lapse = false}) {
+    var n = min(maxIntervalDays, max(1, days));
+    if (fuzz && n >= 3) {
+      // Deterministic per card and repetition, so the button label matches the result.
+      final spread = max(1, (n * 0.05).round());
+      n += Random(card.id.hashCode ^ card.reps).nextInt(spread * 2 + 1) - spread;
+      n = min(maxIntervalDays, max(1, n));
+    }
+    return SchedulePreview(CardState.review, n, ease, 0, dayOnly(now).add(Duration(days: n, hours: 4)), wasLapse: lapse);
+  }
 }
 
 class SchedulePreview {

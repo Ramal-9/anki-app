@@ -8,7 +8,9 @@ import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/queue_screen.dart';
 import 'screens/search_screen.dart';
+import 'services/notify.dart';
 import 'services/speech.dart';
+import 'services/sync.dart';
 import 'store.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -17,7 +19,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = AppStore();
   await store.load();
-  Speech.instance.warmUp();
+  Speech.instance
+    ..preferred = store.voices
+    ..warmUp();
+  SyncService.instance = SyncService(store);
+  await SyncService.instance.init();
+  ReminderService(store).start();
+  // Sync again whenever the app comes back to the foreground.
+  AppLifecycleListener(onResume: SyncService.instance.nudge);
   runApp(StoreScope(store: store, child: const AnkiApp()));
 }
 
@@ -39,6 +48,7 @@ class AnkiApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
     AppColors.dark = store.darkMode;
+    Speech.instance.preferred = store.voices;
     return MaterialApp(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
@@ -91,6 +101,7 @@ class _HomeShellState extends State<HomeShell> {
     if (desktopOf(context)) {
       return Scaffold(
         body: Row(children: [
+          const _EmojiWarmUp(),
           _Sidebar(
             index: _tab,
             onTap: (i) => setState(() => _tab = i),
@@ -112,6 +123,7 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       body: Stack(
         children: [
+          const _EmojiWarmUp(),
           IndexedStack(index: _tab, children: _screens),
           Positioned(
             left: 12,
@@ -280,4 +292,16 @@ class _SearchButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Lays out the emoji the app uses once, invisibly, so the browser downloads
+/// the emoji font while online and the service worker keeps it for offline use.
+class _EmojiWarmUp extends StatelessWidget {
+  const _EmojiWarmUp();
+
+  @override
+  Widget build(BuildContext context) => const Opacity(
+        opacity: 0,
+        child: SizedBox(width: 1, height: 1, child: OverflowBox(maxWidth: 400, child: Text('🎉👀✨🔥'))),
+      );
 }

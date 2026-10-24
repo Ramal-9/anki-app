@@ -20,20 +20,37 @@ class AppStore extends ChangeNotifier {
   final cards = <Flashcard>[];
   final logs = <ReviewLog>[];
 
-  // Settings
-  int dailyGoal = 40;
+  /// Tombstones: id of a deleted deck/card → when it was deleted (for sync).
+  final deleted = <String, DateTime>{};
+
+  // ------------------------------------------------- synced settings
+  // Daily goals
+  bool goalTracking = true;
+  int newGoal = 15;
+  int reviewGoal = 25;
+  int get dailyGoal => newGoal + reviewGoal;
+
+  // Spaced repetition
+  SrsPreset srsPreset = SrsPreset.standard;
+  SrsParams customSrs = SrsParams.standard;
+  SrsParams get srs => SrsParams.forPreset(srsPreset) ?? customSrs;
+
+  // Notifications
   bool notifications = true;
-  bool darkMode = true;
+  int reminderMinutes = 13 * 60; // minutes after midnight
+
   bool autoPlayAudio = false;
   bool onlineSuggestions = true;
   String accent = 'en-GB';
   double speechRate = 0.9;
-  int maxIntervalDays = 36500;
-  double retentionGoal = 0.9;
   QueueSort queueSort = QueueSort.dueDate;
   String? email;
 
-  // Screen
+  /// When synced settings last changed; the newer side wins on sync.
+  DateTime settingsModified = DateTime(2000);
+
+  // -------------------------------------------- this-device settings
+  bool darkMode = true;
   LayoutMode layoutMode = LayoutMode.auto;
   double uiScale = 1.0;
   double textScale = 1.0;
@@ -41,7 +58,13 @@ class AppStore extends ChangeNotifier {
   /// Max width of the phone layout when the window is wider (e.g. phone mode on a Mac).
   double phoneWidth = 520;
 
-  Scheduler get scheduler => Scheduler(maxIntervalDays: maxIntervalDays);
+  /// Chosen voice name per accent ('' = best available). Voices differ per device.
+  final voices = <String, String>{};
+
+  /// Called after every local change (the sync service debounces a push).
+  VoidCallback? onLocalChange;
+
+  Scheduler get scheduler => Scheduler.fromParams(srs);
 
   SharedPreferences? _prefs;
 
@@ -65,39 +88,76 @@ class AppStore extends ChangeNotifier {
     await _prefs?.setString(_key, jsonEncode(toJson()));
   }
 
-  void _changed() {
+  void _changed({bool settings = false}) {
+    if (settings) settingsModified = DateTime.now();
+    AppColors.dark = darkMode;
+    notifyListeners();
+    save();
+    onLocalChange?.call();
+  }
+
+  /// Call after mutating synced settings fields directly.
+  void touch() => _changed(settings: true);
+
+  /// Call after mutating this-device settings (theme, layout, voices).
+  void touchDevice() {
     AppColors.dark = darkMode;
     notifyListeners();
     save();
   }
 
-  /// Call after mutating settings fields directly.
-  void touch() => _changed();
+  Map<String, dynamic> settingsJson() => {
+        'goalTracking': goalTracking,
+        'newGoal': newGoal,
+        'reviewGoal': reviewGoal,
+        'srsPreset': srsPreset.index,
+        'srsRetention': customSrs.retention,
+        'srsMaxInterval': customSrs.maxIntervalDays,
+        'srsFuzz': customSrs.fuzz,
+        'srsShortTerm': customSrs.shortTerm,
+        'notifications': notifications,
+        'reminderMinutes': reminderMinutes,
+        'autoPlayAudio': autoPlayAudio,
+        'onlineSuggestions': onlineSuggestions,
+        'accent': accent,
+        'speechRate': speechRate,
+        'queueSort': queueSort.index,
+        'email': email,
+      };
 
-  Map<String, dynamic> toJson() => {
+  void applySettingsJson(Map s) {
+    goalTracking = s['goalTracking'] ?? true;
+    newGoal = s['newGoal'] ?? 15;
+    reviewGoal = s['reviewGoal'] ?? 25;
+    srsPreset = SrsPreset.values[s['srsPreset'] ?? 0];
+    customSrs = SrsParams(
+      retention: (s['srsRetention'] ?? 0.9).toDouble(),
+      maxIntervalDays: s['srsMaxInterval'] ?? 365,
+      fuzz: s['srsFuzz'] ?? true,
+      shortTerm: s['srsShortTerm'] ?? true,
+    );
+    notifications = s['notifications'] ?? true;
+    reminderMinutes = s['reminderMinutes'] ?? 13 * 60;
+    autoPlayAudio = s['autoPlayAudio'] ?? false;
+    onlineSuggestions = s['onlineSuggestions'] ?? true;
+    accent = s['accent'] ?? 'en-GB';
+    speechRate = (s['speechRate'] ?? 0.9).toDouble();
+    queueSort = QueueSort.values[s['queueSort'] ?? 0];
+    email = s['email'];
+  }
+
+  /// Everything that is shared between devices.
+  Map<String, dynamic> syncJson() => {
         'decks': decks.map((d) => d.toJson()).toList(),
         'cards': cards.map((c) => c.toJson()).toList(),
         'logs': logs.map((l) => l.toJson()).toList(),
-        'settings': {
-          'dailyGoal': dailyGoal,
-          'notifications': notifications,
-          'darkMode': darkMode,
-          'autoPlayAudio': autoPlayAudio,
-          'onlineSuggestions': onlineSuggestions,
-          'accent': accent,
-          'speechRate': speechRate,
-          'maxIntervalDays': maxIntervalDays,
-          'retentionGoal': retentionGoal,
-          'queueSort': queueSort.index,
-          'email': email,
-          'layoutMode': layoutMode.index,
-          'uiScale': uiScale,
-          'textScale': textScale,
-          'phoneWidth': phoneWidth,
-        },
+        'deleted': deleted.map((k, v) => MapEntry(k, v.toIso8601String())),
+        'settings': settingsJson(),
+        'settingsModified': settingsModified.toIso8601String(),
       };
 
-  void _fromJson(Map<String, dynamic> j) {
+  /// Replaces shared data with [j] (a merged sync payload). Device settings stay.
+  void applySyncJson(Map<String, dynamic> j) {
     decks
       ..clear()
       ..addAll((j['decks'] as List).map((e) => Deck.fromJson(e)));
@@ -107,22 +167,52 @@ class AppStore extends ChangeNotifier {
     logs
       ..clear()
       ..addAll((j['logs'] as List).map((e) => ReviewLog.fromJson(e)));
+    deleted
+      ..clear()
+      ..addAll(((j['deleted'] as Map?) ?? {}).map((k, v) => MapEntry(k as String, DateTime.parse(v))));
+    applySettingsJson((j['settings'] as Map?) ?? {});
+    settingsModified =
+        j['settingsModified'] == null ? DateTime(2000) : DateTime.parse(j['settingsModified']);
+  }
+
+  /// Applies a merged payload from sync without triggering another push.
+  void replaceFromSync(Map<String, dynamic> j) {
+    applySyncJson(j);
+    AppColors.dark = darkMode;
+    notifyListeners();
+    save();
+  }
+
+  Map<String, dynamic> toJson() => {
+        ...syncJson(),
+        'device': {
+          'darkMode': darkMode,
+          'layoutMode': layoutMode.index,
+          'uiScale': uiScale,
+          'textScale': textScale,
+          'phoneWidth': phoneWidth,
+          'voices': voices,
+        },
+      };
+
+  void _fromJson(Map<String, dynamic> j) {
+    applySyncJson(j);
     final s = (j['settings'] as Map?) ?? {};
-    dailyGoal = s['dailyGoal'] ?? 40;
-    notifications = s['notifications'] ?? true;
-    darkMode = s['darkMode'] ?? true;
-    autoPlayAudio = s['autoPlayAudio'] ?? false;
-    onlineSuggestions = s['onlineSuggestions'] ?? true;
-    accent = s['accent'] ?? 'en-GB';
-    speechRate = (s['speechRate'] ?? 0.9).toDouble();
-    maxIntervalDays = s['maxIntervalDays'] ?? 36500;
-    retentionGoal = (s['retentionGoal'] ?? 0.9).toDouble();
-    queueSort = QueueSort.values[s['queueSort'] ?? 0];
-    email = s['email'];
-    layoutMode = LayoutMode.values[s['layoutMode'] ?? 0];
-    uiScale = (s['uiScale'] ?? 1.0).toDouble();
-    textScale = (s['textScale'] ?? 1.0).toDouble();
-    phoneWidth = (s['phoneWidth'] ?? 520).toDouble();
+    // Settings saved by older versions of the app.
+    if (s.containsKey('dailyGoal') && !s.containsKey('newGoal')) {
+      final g = s['dailyGoal'] as int;
+      newGoal = (g * 0.375).round();
+      reviewGoal = g - newGoal;
+    }
+    final d = (j['device'] as Map?) ?? s;
+    darkMode = d['darkMode'] ?? true;
+    layoutMode = LayoutMode.values[d['layoutMode'] ?? 0];
+    uiScale = (d['uiScale'] ?? 1.0).toDouble();
+    textScale = (d['textScale'] ?? 1.0).toDouble();
+    phoneWidth = (d['phoneWidth'] ?? 520).toDouble();
+    voices
+      ..clear()
+      ..addAll(((d['voices'] as Map?) ?? {}).cast<String, String>());
   }
 
   String exportJson() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -138,11 +228,25 @@ class AppStore extends ChangeNotifier {
   }
 
   void resetToDemo() {
-    _seed();
+    final now = DateTime.now();
+    for (final c in cards) {
+      deleted[c.id] = now;
+    }
+    for (final d in decks) {
+      deleted[d.id] = now;
+    }
+    _seed(keepTombstones: true);
     _changed();
   }
 
   void eraseAll() {
+    final now = DateTime.now();
+    for (final c in cards) {
+      deleted[c.id] = now;
+    }
+    for (final d in decks) {
+      deleted[d.id] = now;
+    }
     decks.clear();
     cards.clear();
     logs.clear();
@@ -163,19 +267,31 @@ class AppStore extends ChangeNotifier {
     return logs.where((l) => l.wasNew && !l.time.isBefore(today) && deckIds.contains(l.cardId)).length;
   }
 
-  /// Cards ready to study now, optionally for one deck.
+  /// Cards ready to study now, optionally for one deck. New cards are capped by
+  /// the deck limit and the daily New cards goal, reviews by the Reviews goal.
   List<Flashcard> queue({String? deckId, DateTime? at}) {
     final now = at ?? DateTime.now();
+    final today = dayOnly(now);
+    final todays = logs.where((l) => !l.time.isBefore(today));
+    // With goal tracking off only the per-deck new card limit applies.
+    var newGoalLeft = goalTracking ? max(0, newGoal - todays.where((l) => l.wasNew).length) : 1 << 30;
+    final reviewGoalLeft = goalTracking ? max(0, reviewGoal - todays.where((l) => l.wasReview).length) : 1 << 30;
     final result = <Flashcard>[];
+    final due = <Flashcard>[];
     for (final deck in decks) {
       if (deckId != null && deck.id != deckId) continue;
       final deckCards = cardsOf(deck.id);
-      result.addAll(deckCards.where((c) => c.state != CardState.newCard && !c.due.isAfter(now)));
-      final newLeft = max(0, deck.newPerDay - newStudiedToday(deck.id, now));
+      due.addAll(deckCards.where((c) => c.state != CardState.newCard && !c.due.isAfter(now)));
+      final newLeft = max(0, min(deck.newPerDay - newStudiedToday(deck.id, now), newGoalLeft));
       final fresh = deckCards.where((c) => c.state == CardState.newCard).toList()
         ..sort((a, b) => a.created.compareTo(b.created));
       result.addAll(fresh.take(newLeft));
+      newGoalLeft -= min(newLeft, fresh.length);
     }
+    // Learning cards always come back; graduated reviews are capped by the goal.
+    due.sort((a, b) => a.due.compareTo(b.due));
+    result.addAll(due.where((c) => c.state == CardState.learning));
+    result.addAll(due.where((c) => c.state == CardState.review).take(reviewGoalLeft));
     switch (queueSort) {
       case QueueSort.dueDate:
         // New cards first like the original app, then by due time.
@@ -199,6 +315,11 @@ class AppStore extends ChangeNotifier {
     return logs.where((l) => !l.time.isBefore(today)).length;
   }
 
+  /// True while the user hasn't added anything of their own (just the demo decks).
+  bool get onlyDemoData =>
+      decks.every((d) => d.id.startsWith('english') || d.id.startsWith('olympiad')) &&
+      cards.every((c) => c.id.startsWith('seed'));
+
   int countState(CardState s) => cards.where((c) => c.state == s).length;
 
   // -------------------------------------------------------------- mutations
@@ -210,9 +331,17 @@ class AppStore extends ChangeNotifier {
     return d;
   }
 
-  void updateDeck(Deck d) => _changed();
+  void updateDeck(Deck d) {
+    d.modified = DateTime.now();
+    _changed();
+  }
 
   void deleteDeck(String id) {
+    final now = DateTime.now();
+    deleted[id] = now;
+    for (final c in cards.where((c) => c.deckId == id)) {
+      deleted[c.id] = now;
+    }
     decks.removeWhere((d) => d.id == id);
     cards.removeWhere((c) => c.deckId == id);
     _changed();
@@ -226,9 +355,13 @@ class AppStore extends ChangeNotifier {
     return c;
   }
 
-  void updateCard(Flashcard c) => _changed();
+  void updateCard(Flashcard c) {
+    c.modified = DateTime.now();
+    _changed();
+  }
 
   void deleteCard(String id) {
+    deleted[id] = DateTime.now();
     cards.removeWhere((c) => c.id == id);
     _changed();
   }
@@ -273,14 +406,17 @@ class AppStore extends ChangeNotifier {
 
   // ------------------------------------------------------------------ seed
 
-  void _seed() {
+  void _seed({bool keepTombstones = false}) {
     decks.clear();
     cards.clear();
     logs.clear();
+    if (!keepTombstones) deleted.clear();
     final rnd = Random(7);
     final now = DateTime.now();
-    final english = Deck(id: 'english', name: 'English', language: 'en-GB');
-    final olympiad = Deck(id: 'olympiad', name: 'Olympiad', language: 'en-GB');
+    // Ids are unique per seeding so demo data on two devices never collides when syncing.
+    final tag = now.microsecondsSinceEpoch.toRadixString(36);
+    final english = Deck(id: 'english-$tag', name: 'English', language: 'en-GB');
+    final olympiad = Deck(id: 'olympiad-$tag', name: 'Olympiad', language: 'en-GB');
     decks.addAll([english, olympiad]);
 
     const englishCards = [
@@ -331,7 +467,7 @@ class AppStore extends ChangeNotifier {
     var i = 0;
     Flashcard mk(Deck d, List<String> fb, {required bool fresh}) {
       final created = now.subtract(Duration(days: fresh ? 1 : 30 + rnd.nextInt(60), minutes: i++));
-      final c = Flashcard(id: 'seed$i', deckId: d.id, front: fb[0], back: fb[1], created: created);
+      final c = Flashcard(id: 'seed$i-$tag', deckId: d.id, front: fb[0], back: fb[1], created: created);
       if (!fresh) {
         c.state = CardState.review;
         c.interval = [3, 7, 14, 21, 45, 60, 120, 180, 270, 330][rnd.nextInt(10)];

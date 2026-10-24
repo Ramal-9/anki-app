@@ -55,13 +55,14 @@ ThemeData buildTheme() {
   final dark = AppColors.dark;
   final base = dark ? ThemeData.dark(useMaterial3: true) : ThemeData.light(useMaterial3: true);
   return base.copyWith(
+    textTheme: base.textTheme.apply(fontFamily: 'Roboto', bodyColor: AppColors.text, displayColor: AppColors.text),
+    primaryTextTheme: base.primaryTextTheme.apply(fontFamily: 'Roboto'),
     scaffoldBackgroundColor: AppColors.bg,
     colorScheme: base.colorScheme.copyWith(
       primary: AppColors.accent,
       surface: AppColors.surface,
       onSurface: AppColors.text,
     ),
-    textTheme: base.textTheme.apply(bodyColor: AppColors.text, displayColor: AppColors.text),
     dialogTheme: DialogThemeData(backgroundColor: AppColors.surface),
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: AppColors.bg),
     snackBarTheme: SnackBarThemeData(

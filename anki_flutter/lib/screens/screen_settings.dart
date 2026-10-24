@@ -21,7 +21,7 @@ class ScreenSettingsScreen extends StatelessWidget {
 
     void set(VoidCallback change) {
       change();
-      store.touch();
+      store.touchDevice();
     }
 
     return Scaffold(

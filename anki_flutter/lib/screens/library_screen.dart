@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'ai_practice.dart';
 import 'deck_screen.dart';
+import 'generate_cards.dart';
 import 'search_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           right: 20,
           bottom: 120,
           child: GestureDetector(
-            onTap: () => showFreePractice(context),
+            onTap: () => Navigator.of(context).push(pageRoute(const GenerateCardsScreen(), fullscreenDialog: true)),
             child: Container(
               width: 82,
               height: 82,
@@ -192,6 +193,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _newDeck(context, store);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('Generate cards from text'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(pageRoute(const GenerateCardsScreen(), fullscreenDialog: true));
               },
             ),
             ListTile(

@@ -442,9 +442,9 @@ class _AiPracticeSheetState extends State<AiPracticeSheet> with SingleTickerProv
                 SegmentedButton<String>(
                   showSelectedIcon: false,
                   segments: const [
-                    ButtonSegment(value: 'en-GB', label: Text('🇬🇧 UK')),
-                    ButtonSegment(value: 'en-US', label: Text('🇺🇸 US')),
-                    ButtonSegment(value: 'en-AU', label: Text('🇦🇺 AU')),
+                    ButtonSegment(value: 'en-GB', label: Text('UK')),
+                    ButtonSegment(value: 'en-US', label: Text('US')),
+                    ButtonSegment(value: 'en-AU', label: Text('AU')),
                   ],
                   selected: {_lang},
                   onSelectionChanged: (s) {

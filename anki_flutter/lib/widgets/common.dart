@@ -19,14 +19,17 @@ class RoundButton extends StatelessWidget {
         height: size,
         width: wide ? null : size,
         padding: wide ? const EdgeInsets.symmetric(horizontal: 20) : null,
-        alignment: Alignment.center,
+        alignment: wide ? null : Alignment.center,
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(size / 2),
           border: Border.all(color: AppColors.dark ? Colors.white10 : Colors.black12),
           boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2))],
         ),
-        child: IconTheme(data: IconThemeData(color: AppColors.text, size: 26), child: child),
+        child: IconTheme(
+          data: IconThemeData(color: AppColors.text, size: 26),
+          child: wide ? Center(widthFactor: 1, child: child) : child,
+        ),
       ),
     );
   }

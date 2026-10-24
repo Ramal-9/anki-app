@@ -172,7 +172,7 @@ class _RetentionCardState extends State<_RetentionCard> {
               ? Center(child: Text('Review some cards to see your retention', style: TextStyle(color: AppColors.textSecondary)))
               : CustomPaint(
                   size: Size.infinite,
-                  painter: _RetentionPainter(points, goal: store.retentionGoal, dark: AppColors.dark),
+                  painter: _RetentionPainter(points, goal: store.srs.retention, dark: AppColors.dark),
                 ),
         ),
         const SizedBox(height: 12),
@@ -183,7 +183,7 @@ class _RetentionCardState extends State<_RetentionCard> {
           const SizedBox(width: 22),
           Container(width: 22, height: 3, color: AppColors.goalTeal),
           const SizedBox(width: 8),
-          Text('Goal · ${(store.retentionGoal * 100).round()} %',
+          Text('Goal · ${(store.srs.retention * 100).round()} %',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
         ]),
         const SizedBox(height: 18),

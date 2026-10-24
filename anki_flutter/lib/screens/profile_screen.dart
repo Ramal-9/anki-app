@@ -6,8 +6,12 @@ import '../main.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import 'queue_screen.dart';
+import '../services/sync.dart';
+import '../srs.dart';
 import 'screen_settings.dart';
+import 'settings_pages.dart';
+import 'sync_screen.dart';
+import 'voice_settings.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -64,11 +68,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   }
                 },
               ),
-              _Row(
-                icon: Icons.cloud_outlined,
-                title: 'Sync',
-                value: 'Disabled',
-                onTap: () => _backupSheet(context, store),
+              ListenableBuilder(
+                listenable: SyncService.instance,
+                builder: (context, _) => _Row(
+                  icon: Icons.cloud_outlined,
+                  title: 'Sync',
+                  value: syncSummary(),
+                  chevron: true,
+                  onTap: () => _push(context, const SyncScreen()),
+                ),
               ),
             ]),
             const SectionLabel('Settings', padding: EdgeInsets.fromLTRB(36, 28, 20, 12)),
@@ -76,58 +84,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _Row(
                 icon: Icons.tune_rounded,
                 title: 'Spaced repetition',
-                value: store.maxIntervalDays == 36500 && store.retentionGoal == 0.9 ? 'Default' : 'Custom',
+                value: switch (store.srsPreset) {
+                  SrsPreset.standard => 'Default',
+                  SrsPreset.aggressive => 'Aggressive',
+                  SrsPreset.relaxed => 'Relaxed',
+                  SrsPreset.custom => 'Custom',
+                },
                 chevron: true,
-                onTap: () => _srsSheet(context, store),
+                onTap: () => _push(context, const SpacedRepetitionScreen()),
               ),
               _Row(
                 icon: Icons.track_changes_rounded,
                 title: 'Daily goals',
-                value: '${store.dailyGoal} cards/day',
+                value: store.goalTracking ? '${store.dailyGoal} cards/day' : 'Off',
                 chevron: true,
-                onTap: () async {
-                  final v = await showDailyGoalPicker(context, store.dailyGoal);
-                  if (v != null) {
-                    store.dailyGoal = v;
-                    store.touch();
-                  }
-                },
+                onTap: () => _push(context, const DailyGoalsScreen()),
               ),
               _Row(
                 icon: Icons.notifications_active_outlined,
                 title: 'Notifications',
-                value: store.notifications ? 'On' : 'Off',
+                value: store.notifications ? formatMinutes(store.reminderMinutes) : 'Off',
                 chevron: true,
-                onTap: () {
-                  store.notifications = !store.notifications;
-                  store.touch();
-                },
+                onTap: () => _push(context, const NotificationsScreen()),
               ),
             ]),
             const SectionLabel('AI Practice', padding: EdgeInsets.fromLTRB(36, 28, 20, 12)),
             Panel(children: [
               _Row(
                 icon: Icons.record_voice_over_outlined,
-                title: 'Accent',
-                value: const {'en-GB': 'UK', 'en-US': 'US', 'en-AU': 'AU'}[store.accent] ?? store.accent,
+                title: 'Voice',
+                value: '${kAccents[store.accent] ?? store.accent} · ${store.speechRate.toStringAsFixed(1)}×',
                 chevron: true,
-                onTap: () {
-                  const order = ['en-GB', 'en-US', 'en-AU'];
-                  store.accent = order[(order.indexOf(store.accent) + 1) % order.length];
-                  store.touch();
-                },
-              ),
-              _Row(
-                icon: Icons.speed_rounded,
-                title: 'Speech speed',
-                value: '${store.speechRate.toStringAsFixed(1)}×',
-                chevron: true,
-                onTap: () {
-                  const rates = [0.6, 0.8, 0.9, 1.0, 1.2];
-                  final i = rates.indexWhere((r) => (r - store.speechRate).abs() < 0.01);
-                  store.speechRate = rates[(i + 1) % rates.length];
-                  store.touch();
-                },
+                onTap: () => _push(context, const VoiceSettingsScreen()),
               ),
               _SwitchRow(
                 icon: Icons.volume_up_outlined,
@@ -156,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 value: store.darkMode,
                 onChanged: (v) {
                   store.darkMode = v;
-                  store.touch();
+                  store.touchDevice();
                 },
               ),
               _Row(
@@ -173,20 +161,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _Row(
                 icon: Icons.app_shortcut_outlined,
                 title: 'App icon',
-                trailingWidget: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.all(6),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: AppColors.brandGradient,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
+                trailingWidget: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset('assets/images/app_icon.png', width: 44, height: 44),
                 ),
                 chevron: true,
-                onTap: () => toast(context, 'Install the app: browser menu → "Add to Home Screen"'),
+                onTap: () => toast(context,
+                    'Install: iPhone Safari → Share → Add to Home Screen. Mac Safari → File → Add to Dock.'),
               ),
             ]),
             const SectionLabel('Feedback', padding: EdgeInsets.fromLTRB(36, 28, 20, 12)),
@@ -218,7 +199,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.back_hand_outlined,
                 title: 'Privacy Policy',
                 onTap: () => _legal(context, 'Privacy Policy',
-                    'All decks, cards and statistics are stored only in this browser (localStorage). '
+                    'All decks, cards and statistics are stored in this browser (localStorage). '
+                        'If you turn on Sync they are also kept in a secret gist of your GitHub account, '
+                        'encrypted with your sync password so that nobody else can read them. '
                         'Speech recognition is performed by your browser\'s speech service. '
                         'When online suggestions are on, the word you add is sent to api.datamuse.com.'),
               ),
@@ -304,7 +287,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 10),
             Text(
               'Everything is already unlocked in this open-source build: unlimited decks, AI Practice and phrase suggestions. '
-              'Use "Sync → Export backup" to keep your progress safe.',
+              'Turn on Sync to keep your progress safe on all your devices.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary, fontSize: 16, height: 1.4),
             ),
@@ -316,58 +299,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _srsSheet(BuildContext context, AppStore store) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Spaced repetition (SM-2)', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 6),
-              Text('Learning steps: 1 min → 10 min. Graduating interval 1 day, easy 4 days, starting ease 250%.',
-                  style: TextStyle(color: AppColors.textSecondary)),
-              const SizedBox(height: 18),
-              Text('Retention goal: ${(store.retentionGoal * 100).round()} %'),
-              Slider(
-                value: store.retentionGoal,
-                min: 0.7,
-                max: 0.97,
-                divisions: 27,
-                onChanged: (v) {
-                  store.retentionGoal = double.parse(v.toStringAsFixed(2));
-                  store.touch();
-                  set(() {});
-                },
-              ),
-              Text('Maximum interval: ${store.maxIntervalDays >= 36500 ? '100 years' : '${store.maxIntervalDays} days'}'),
-              Slider(
-                value: [30, 90, 180, 365, 730, 36500].indexOf(store.maxIntervalDays).clamp(0, 5).toDouble(),
-                max: 5,
-                divisions: 5,
-                onChanged: (v) {
-                  store.maxIntervalDays = const [30, 90, 180, 365, 730, 36500][v.round()];
-                  store.touch();
-                  set(() {});
-                },
-              ),
-              TextButton(
-                onPressed: () {
-                  store.retentionGoal = 0.9;
-                  store.maxIntervalDays = 36500;
-                  store.touch();
-                  set(() {});
-                },
-                child: const Text('Reset to default'),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
+  void _push(BuildContext context, Widget page) => Navigator.of(context).push(pageRoute(page));
 
   void _backupSheet(BuildContext context, AppStore store) {
     showModalBottomSheet(

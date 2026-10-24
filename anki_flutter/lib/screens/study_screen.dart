@@ -11,6 +11,8 @@ import '../store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'ai_practice.dart';
+import 'card_editor.dart';
+import '../display.dart';
 
 class StudyScreen extends StatefulWidget {
   const StudyScreen({super.key, this.deckId});
@@ -25,6 +27,9 @@ class _StudyScreenState extends State<StudyScreen> {
   int _index = 0;
   int _answered = 0;
   bool _revealed = false;
+
+  /// After revealing, tapping the card flips back to the question.
+  bool _showFront = false;
   int _fontStep = 1;
   static const _fontSizes = [26.0, 32.0, 38.0, 46.0];
 
@@ -53,7 +58,10 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _reveal() {
     if (_current == null || _revealed) return;
-    setState(() => _revealed = true);
+    setState(() {
+      _revealed = true;
+      _showFront = false;
+    });
   }
 
   void _grade(int g) {
@@ -106,7 +114,10 @@ class _StudyScreenState extends State<StudyScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 20, fontWeight: FontWeight.w600)),
                   ),
-                  RoundButton(onTap: () => _settings(store), child: const Icon(Icons.tune_rounded)),
+                  _HeaderPill(
+                    onEdit: card == null ? null : () => _edit(card),
+                    onSettings: () => _settings(store),
+                  ),
                 ]),
               ),
               Expanded(child: card == null ? _finished() : _cardView(store, card)),
@@ -131,96 +142,124 @@ class _StudyScreenState extends State<StudyScreen> {
     );
   }
 
+  Future<void> _edit(Flashcard card) async {
+    Speech.instance.stopSpeaking();
+    await Navigator.of(context).push(pageRoute(CardEditor(deckId: card.deckId, card: card)));
+    if (!mounted) return;
+    // The card may have been deleted in the editor.
+    if (!_store.cards.contains(card)) {
+      setState(() {
+        _cards.removeAt(_index);
+        _revealed = false;
+      });
+    } else {
+      setState(() {});
+    }
+  }
+
   Widget _cardView(AppStore store, Flashcard card) {
     final fs = _fontSizes[_fontStep];
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(32)),
-      child: Stack(children: [
-        Positioned.fill(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(28, 80, 28, 90),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.45),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                _label('QUESTION'),
-                const SizedBox(height: 12),
-                Text(card.front,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: fs, fontWeight: FontWeight.w700, height: 1.25)),
-                if (_revealed) ...[
-                  const SizedBox(height: 28),
-                  Divider(color: AppColors.divider, indent: 40, endIndent: 40),
-                  const SizedBox(height: 22),
-                  _label('ANSWER'),
-                  const SizedBox(height: 12),
-                  if (card.imageUrl != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.network(card.imageUrl!,
-                            height: 160, errorBuilder: (_, __, ___) => const SizedBox()),
-                      ),
+    final answerSide = _revealed && !_showFront;
+    return GestureDetector(
+      onTap: _revealed ? () => setState(() => _showFront = !_showFront) : _reveal,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(32)),
+        child: Stack(children: [
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, box) => SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(26, 76, 26, 76),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: max(0, box.maxHeight - 152)),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: Column(
+                      key: ValueKey(answerSide),
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: answerSide
+                          ? [
+                              _label('ANSWER'),
+                              const SizedBox(height: 14),
+                              if (card.imageUrl != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 14),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Image.network(card.imageUrl!,
+                                        height: 160, errorBuilder: (_, __, ___) => const SizedBox()),
+                                  ),
+                                ),
+                              Text(card.back,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: fs, color: AppColors.accentStrong, fontWeight: FontWeight.w700, height: 1.25)),
+                            ]
+                          : [
+                              _label('QUESTION'),
+                              const SizedBox(height: 14),
+                              Text(card.front,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: fs, fontWeight: FontWeight.w700, height: 1.25)),
+                            ],
                     ),
-                  Text(card.back,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: fs * 0.72, color: AppColors.text.withValues(alpha: 0.9), height: 1.35)),
-                ],
-              ]),
-            ),
-          ),
-        ),
-        Positioned(
-          top: 14,
-          right: 14,
-          child: _miniButton(
-            child: Text('ᴀA', style: TextStyle(color: AppColors.textSecondary, fontSize: 22, fontWeight: FontWeight.w600)),
-            onTap: () => setState(() => _fontStep = (_fontStep + 1) % _fontSizes.length),
-          ),
-        ),
-        Positioned(
-          top: 14,
-          left: 14,
-          child: _miniButton(
-            child: Icon(Icons.volume_up_rounded, color: AppColors.textSecondary),
-            onTap: () => Speech.instance.speak(card.front, lang: _langOf(card), rate: store.speechRate),
-          ),
-        ),
-        Positioned(
-          bottom: 16,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: GestureDetector(
-              onTap: () => showAiPractice(context, text: card.front, lang: _langOf(card), translation: card.back),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.dark ? Colors.black : AppColors.surface2,
-                  borderRadius: BorderRadius.circular(22),
+                  ),
                 ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.mic_rounded, color: AppColors.accent, size: 22),
-                  SizedBox(width: 8),
-                  Text('AI Practice', style: TextStyle(color: AppColors.accent, fontSize: 16, fontWeight: FontWeight.w600)),
-                ]),
               ),
             ),
           ),
-        ),
-      ]),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: _miniButton(
+              child: Text('ᴀA', style: TextStyle(color: AppColors.textSecondary, fontSize: 19, fontWeight: FontWeight.w600)),
+              onTap: () => setState(() => _fontStep = (_fontStep + 1) % _fontSizes.length),
+            ),
+          ),
+          Positioned(
+            top: 14,
+            left: 14,
+            child: _miniButton(
+              child: Icon(Icons.volume_up_rounded, color: AppColors.textSecondary, size: 22),
+              onTap: () => Speech.instance.speak(card.front, lang: _langOf(card), rate: store.speechRate),
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () => showAiPractice(context, text: card.front, lang: _langOf(card), translation: card.back),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface2.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.mic_rounded, color: AppColors.accent, size: 20),
+                    const SizedBox(width: 6),
+                    Text('AI Practice',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 15, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
   Widget _label(String s) =>
-      Text(s, style: TextStyle(color: AppColors.textSecondary, fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.w500));
+      Text(s, style: TextStyle(color: AppColors.textSecondary, fontSize: 15, letterSpacing: 1.6, fontWeight: FontWeight.w500));
 
   Widget _miniButton({required Widget child, required VoidCallback onTap}) => GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 52,
-          height: 52,
+          width: 44,
+          height: 44,
           alignment: Alignment.center,
           decoration: BoxDecoration(color: AppColors.surface2.withValues(alpha: 0.6), shape: BoxShape.circle),
           child: child,
@@ -230,35 +269,39 @@ class _StudyScreenState extends State<StudyScreen> {
   Widget _gradeButtons(AppStore store, Flashcard card) {
     final now = DateTime.now();
     const specs = [
-      (1, 'Again', AppColors.newRed),
-      (2, 'Hard', AppColors.todayOrange),
-      (3, 'Good', AppColors.reviewGreen),
-      (4, 'Easy', AppColors.accentStrong),
+      (1, 'again', Icons.thumb_down_outlined, Color(0xFFC9465C)),
+      (2, 'hard', Icons.thumbs_up_down_outlined, Color(0xFFCC8142)),
+      (3, 'good', Icons.thumb_up_outlined, Color(0xFF6B70D6)),
+      (4, 'easy', Icons.sign_language_outlined, Color(0xFF4DB3A2)),
     ];
-    return Row(children: [
-      for (final s in specs)
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: GestureDetector(
-              onTap: () => _grade(s.$1),
-              child: Container(
-                height: 72,
-                decoration: BoxDecoration(
-                  color: s.$3.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: s.$3.withValues(alpha: 0.5)),
-                ),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(s.$2, style: TextStyle(color: s.$3, fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 2),
-                  Text(shortInterval(now, store.scheduler.preview(card, s.$1, now).due),
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                ]),
+    Widget button((int, String, IconData, Color) s) => Expanded(
+          child: GestureDetector(
+            onTap: () => _grade(s.$1),
+            child: Container(
+              height: 78,
+              decoration: BoxDecoration(
+                color: s.$4,
+                borderRadius: BorderRadius.circular(39),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                boxShadow: [BoxShadow(color: s.$4.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))],
               ),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(s.$3, color: Colors.white, size: 34),
+                const SizedBox(width: 12),
+                Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(s.$2, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
+                  Text(shortInterval(now, store.scheduler.preview(card, s.$1, now).due),
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.88), fontSize: 14, fontWeight: FontWeight.w600)),
+                ]),
+              ]),
             ),
           ),
-        ),
+        );
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [button(specs[0]), const SizedBox(width: 14), button(specs[1])]),
+      const SizedBox(height: 12),
+      Row(children: [button(specs[2]), const SizedBox(width: 14), button(specs[3])]),
     ]);
   }
 
@@ -323,6 +366,38 @@ class _StudyScreenState extends State<StudyScreen> {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Edit + settings buttons joined in one pill, like the original app.
+class _HeaderPill extends StatelessWidget {
+  const _HeaderPill({required this.onEdit, required this.onSettings});
+  final VoidCallback? onEdit;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: AppColors.dark ? Colors.white10 : Colors.black12),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2))],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          tooltip: 'Edit card',
+          onPressed: onEdit,
+          icon: Icon(Icons.edit_square, color: AppColors.text, size: 26),
+        ),
+        IconButton(
+          tooltip: 'Study settings',
+          onPressed: onSettings,
+          icon: Icon(Icons.tune_rounded, color: AppColors.text, size: 26),
+        ),
+      ]),
     );
   }
 }
